@@ -18,6 +18,6 @@ static void hook_syscall(syscallFn* sct, int syscall, syscallFn function);
 
 static int vaclog_proc_show(struct seq_file* m, void* v);
 static int vaclog_proc_open(struct inode* i, struct file* f);
-static ssize_t vaclog_write(struct file* file, const char __user* buffer, unsigned long count, loff_t* pos);
+static ssize_t vaclog_write(struct file* file, const char __user* buffer, size_t count, loff_t* pos);
 
 #endif

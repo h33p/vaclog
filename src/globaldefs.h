@@ -9,6 +9,7 @@
 #include <linux/kallsyms.h>
 #include <linux/syscalls.h>
 #include <linux/stacktrace.h>
+#include "scantrack.h"
 
 typedef asmlinkage long (*syscallFn)(const struct pt_regs*);
 typedef struct filename* (*getnameFn)(const char __user*, int, int*);
@@ -24,10 +25,14 @@ extern getnameFn _getname_flags;
 extern fdget_posFn _fdget_pos;
 extern f_unlock_posFn _f_unlock_pos;
 
-extern pid_t targetPID;
+extern vacctx_t ctx;
 extern pid_t steamPID;
 extern char procName[];
 
 void print_user_stack(void);
+
+/* offset, sz and permissions arguments are optional */
+int address_module_offset(pid_t pid, uint64_t addr, char* buf, size_t buflen, off_t* offset, size_t* sz, char* permissions);
+struct vm_area_struct* find_vm_area_entry(struct vm_area_struct* map, uint64_t addr);
 
 #endif

@@ -1,4 +1,5 @@
 #include "hook_handlers.h"
+#include "scantrack.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
 #include <linux/proc_ns.h>
@@ -25,7 +26,7 @@ void handle_process_readv_hook(pid_t pid, const struct iovec __user* lvec, uint6
 	if (rveccnt > lveccnt)
 		rveccnt = lveccnt;
 
-	if (pid == targetPID) {
+	if (pid == ctx.pid) {
 		struct iovec localvec[lveccnt];
 		struct iovec remotevec[rveccnt];
 		int i;
@@ -35,11 +36,11 @@ void handle_process_readv_hook(pid_t pid, const struct iovec __user* lvec, uint6
 		if (copy_from_user(remotevec, rvec, sizeof(struct iovec) * rveccnt))
 			return;
 
-		printk("Read from target PID (%d)!\nThese memory ranges are read:\n", pid);
+		printk("vaclog: Read from target PID (%d)!\nThese memory ranges are read:\n", pid);
 		print_user_stack();
 
 		for (i = 0; i < lveccnt; i++)
-			printk("%llx\t<--\t%llx [%lx]\n", (uint64_t)localvec[i].iov_base, (uint64_t)remotevec[i].iov_base, localvec[i].iov_len);
+			printk("vaclog: %llx\t<--\t%llx [%lx]\n", (uint64_t)localvec[i].iov_base, (uint64_t)remotevec[i].iov_base, localvec[i].iov_len);
 	}
 }
 
@@ -55,7 +56,7 @@ void handle_open_hook(const char __user* pathname, uint64_t dfd, uint64_t flags,
 	name[1023] = '\0';
 
 	if (strstr(name, procName)) {
-		printk("Open file on target PID! [%s] (%lld %llx %hx)\n", name, dfd, flags, mode);
+		printk("vaclog: Open file on target PID! [%s] (%lld %llx %hx)\n", name, dfd, flags, mode);
 		print_user_stack();
 	}
 }
@@ -66,8 +67,8 @@ void handle_mmap_hook(unsigned long addr, unsigned long len, unsigned long prot,
 	char name[1024];
 	struct file* file = NULL;
 
-	if (0 && cpid == targetPID) {
-		printk("MMAP on target PID! [%lu @ %lx] (%lu %lu)\n", len, addr, fd, off);
+	if (0 && cpid == ctx.pid) {
+		printk("vaclog: MMAP on target PID! [%lu @ %lx] (%lu %lu)\n", len, addr, fd, off);
 		print_user_stack();
 		return;
 	}
@@ -82,7 +83,7 @@ void handle_mmap_hook(unsigned long addr, unsigned long len, unsigned long prot,
 	fput(file);
 	name[1023] = '\0';
 	if (strstr(name, procName)) {
-		printk("MMAP: %s\n", name);
+		printk("vaclog: MMAP: %s\n", name);
 		print_user_stack();
 	}
 }
@@ -91,8 +92,8 @@ void handle_munmap_hook(unsigned long addr, unsigned long len)
 {
 	pid_t cpid = task_pid_nr(current);
 
-	if (cpid == targetPID) {
-		printk("MUNMAP on target PID! [%lu @ %lx]\n", len, addr);
+	if (cpid == ctx.pid) {
+		printk("vaclog: MUNMAP on target PID! [%lu @ %lx]\n", len, addr);
 		print_user_stack();
 		return;
 	}
@@ -105,15 +106,18 @@ int handle_pread64_hook(int fd, void* buf, size_t count, off_t offset, long ret)
 	struct file* file = NULL;
 	char path[512];
 	char* name;
-	char readbuf[0x100 * 3];
-	char lbuf[0x100];
+	char readbuf[0x20 * 3];
+	char lbuf[0x20];
+	char mapname[128];
+	off_t fileoffset = 0;
+	int addrret = 0;
 	int i;
 
 	if (steamPID != 0 && cpid != steamPID)
 		return 1;
 
-	if (ret > 0x100)
-		count2 = 0x100;
+	if (ret > 0x20)
+		count2 = 0x20;
 	if (ret < 0)
 		count2 = 0;
 
@@ -121,25 +125,36 @@ int handle_pread64_hook(int fd, void* buf, size_t count, off_t offset, long ret)
 	if (!file)
 		return 1;
 	name = dentry_path_raw(file->f_path.dentry, path, 512);
-	path[1023] = '\0';
+	path[511] = '\0';
 	fput(file);
+
 	if (strstr(name, procName)) {
-		printk("PREAD64: %s [%lu @ %#lx] (%ld) -> %p\n", name, count, offset, ret, buf);
-		memset(readbuf, ' ', sizeof(readbuf));
-		if (!strstr(name, "map")) {
-			copy_from_user(lbuf, buf, count2);
-			for (i = 0; i < count2; i++)
-				sprintf(readbuf + i * 3, "%02hhx ", lbuf[i]);
-			if (count2) {
-				readbuf[count2 * 3 - 1] = '\0';
-				lbuf[count2 - 1] = '\0';
-			} else {
-				readbuf[0] = 0;
-				lbuf[0] = 0;
+
+		if (strstr(name, "mem"))
+			handle_vac_scan(&ctx, offset, count);
+
+		addrret = address_module_offset(ctx.pid, offset, mapname, 128, &fileoffset, NULL, NULL);
+		if (addrret)
+			mapname[0] = '\0';
+
+		if (0) {
+			printk("vaclog: PREAD64: %s [%lu @ %#lx, %s @ %#lx] (%ld) -> %p\n", name, count, offset, mapname, fileoffset, ret, buf);
+			memset(readbuf, ' ', sizeof(readbuf));
+			if (!strstr(name, "map")) {
+				copy_from_user(lbuf, buf, count2);
+				for (i = 0; i < count2; i++)
+					sprintf(readbuf + i * 3, "%02hhx ", lbuf[i]);
+				if (count2) {
+					readbuf[count2 * 3 - 1] = '\0';
+					lbuf[count2 - 1] = '\0';
+				} else {
+					readbuf[0] = 0;
+					lbuf[0] = 0;
+				}
+				printk("Showing the first bytes read: %s\n", readbuf);
 			}
-			printk("Showing the first bytes read: %s\n", readbuf);
+			print_user_stack();
 		}
-		print_user_stack();
 		/*return 0;*/
 	}
 	return 1;

@@ -1,12 +1,12 @@
 #include "vaclog.h"
 #include "hooks.h"
+#include "scantrack.h"
 
 syscallFn* sct64 = NULL;
 syscallFn sct64_backup[322];
 syscallFn* sct32 = NULL;
 syscallFn sct32_backup[544];
 
-pid_t targetPID = -1;
 pid_t steamPID = 0;
 char procName[256];
 
@@ -14,6 +14,8 @@ save_stack_trace_userFn _save_stack_trace_user = NULL;
 getnameFn _getname_flags = NULL;
 fdget_posFn _fdget_pos = NULL;
 f_unlock_posFn _f_unlock_pos = NULL;
+
+vacctx_t ctx;
 
 static const struct file_operations vaclog_proc_fops = {
 	.owner = THIS_MODULE,
@@ -33,6 +35,8 @@ static int __init vaclog_init(void) {
 	_save_stack_trace_user = (save_stack_trace_userFn)kallsyms_lookup_name("save_stack_trace_user");
 	_fdget_pos = (fdget_posFn)kallsyms_lookup_name("__fdget_pos");
 	_f_unlock_pos = (f_unlock_posFn)kallsyms_lookup_name("__f_unlock_pos");
+
+    initialize_vac_context(&ctx);
 
 	ewrite();
 
@@ -68,10 +72,13 @@ static void __exit vaclog_exit(void) {
 	restore_sct();
 
 	dwrite();
+
+	free_vac_context(&ctx);
 }
 
 static int vaclog_proc_show(struct seq_file* m, void* v)
 {
+	seq_print_vac_context(&ctx, m);
 	return 0;
 }
 
@@ -80,7 +87,7 @@ static int vaclog_proc_open(struct inode* i, struct file* f)
 	return single_open(f, vaclog_proc_show, 0);
 }
 
-static ssize_t vaclog_write(struct file* file, const char __user* buffer, unsigned long count, loff_t* pos)
+static ssize_t vaclog_write(struct file* file, const char __user* buffer, size_t count, loff_t* pos)
 {
 	char buf[1024], pidString[256];
 	size_t rcount = count;
@@ -93,13 +100,13 @@ static ssize_t vaclog_write(struct file* file, const char __user* buffer, unsign
 
 	buf[1023] = '\0';
 
-	sscanf(buf, "%d %d", &targetPID, &steamPID);
-	sprintf(pidString, "%d/", targetPID);
+	sscanf(buf, "%d %d", &ctx.pid, &steamPID);
+	sprintf(pidString, "%d/", ctx.pid);
 
 	strcpy(procName, "/");
 	strcat(procName, pidString);
 
-	printk("Log PID: %d\n", targetPID);
+	printk("Log PID: %d\n", ctx.pid);
 	printk("Steam PID: %d\n", steamPID);
 	printk("Proc name: %s\n", procName);
 
@@ -154,6 +161,78 @@ void print_user_stack(void)
 	printk("Stack Trace of PID %d (%s)\n", pid, current->comm);
 	_save_stack_trace_user(&trace);
 	print_stack_trace(&trace, 5);
+}
+
+struct vm_area_struct* find_vm_area_entry(struct vm_area_struct* map, uint64_t addr)
+{
+	while (map) {
+		if (map->vm_start <= addr && map->vm_end > addr)
+			return map;
+
+		map = map->vm_next;
+	}
+
+	return NULL;
+}
+
+int address_module_offset(pid_t pid, uint64_t addr, char* buf, size_t buflen, off_t* offset, size_t* sz, char* permissions)
+{
+	struct task_struct* task = pid_task(find_vpid(pid), PIDTYPE_PID);
+	struct mm_struct* mm = NULL;
+	struct vm_area_struct* map = NULL;
+	struct file* file = NULL;
+	char namebuf[512];
+	const char* name = namebuf;
+
+	if (!task)
+		return -1;
+
+	mm = task->mm;
+	spin_lock(&mm->page_table_lock);
+	map = mm->mmap;
+
+	if (!map) {
+		spin_unlock(&mm->page_table_lock);
+		return -2;
+	}
+
+	map = find_vm_area_entry(map, addr);
+
+	if (map) {
+		namebuf[511] = '\0';
+
+		file = map->vm_file;
+
+		if (file)
+			name = dentry_path_raw(file->f_path.dentry, namebuf, 512);
+		else if (map->vm_ops && map->vm_ops->name)
+			name = map->vm_ops->name(map);
+		else {
+			if (!map->vm_mm)
+				name = "[vdso]";
+			else if (map->vm_start <= map->vm_mm->brk && map->vm_end >= map->vm_mm->start_brk)
+				name = "[heap]";
+			else if (map->vm_start <= map->vm_mm->start_stack && map->vm_end >= map->vm_mm->start_stack)
+				name = "[stack]";
+			else
+				name = "[anon]";
+		}
+
+		if (offset)
+			*offset = addr - map->vm_start;
+		if (sz)
+			*sz = map->vm_end - map->vm_start;
+		if (permissions)
+			*permissions = map->vm_flags;
+
+		strncpy(buf, name, buflen);
+		spin_unlock(&mm->page_table_lock);
+
+		return 0;
+	}
+
+	spin_unlock(&mm->page_table_lock);
+	return -3;
 }
 
 module_init(vaclog_init);
