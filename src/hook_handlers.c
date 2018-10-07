@@ -1,5 +1,6 @@
 #include "hook_handlers.h"
 #include "scantrack.h"
+#include "vacdump.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
 #include <linux/proc_ns.h>
@@ -12,9 +13,9 @@
 #include <linux/file.h>
 #include <linux/mount.h>
 
-void handle_process_readv_hook(pid_t pid, const struct iovec __user* lvec, uint64_t lveccnt, const struct iovec __user* rvec, uint64_t rveccnt, uint64_t flags)
+void handle_process_readv_hook(const struct pt_regs* regs, pid_t pid, const struct iovec __user* lvec, uint64_t lveccnt, const struct iovec __user* rvec, uint64_t rveccnt, uint64_t flags)
 {
-	pid_t cpid = task_pid_nr(current);
+	pid_t cpid = task_pid_nr(current->parent);
 	if (steamPID != 0 && cpid != steamPID)
 		return;
 
@@ -44,10 +45,11 @@ void handle_process_readv_hook(pid_t pid, const struct iovec __user* lvec, uint6
 	}
 }
 
-void handle_open_hook(const char __user* pathname, uint64_t dfd, uint64_t flags, umode_t mode)
+void handle_open_hook(const struct pt_regs* regs, const char __user* pathname, uint64_t dfd, uint64_t flags, umode_t mode)
 {
 	pid_t pid = task_pid_nr(current);
-    char name[1024];
+	pid_t cpid = task_pid_nr(current->parent);
+	char name[1024];
 
 	if (steamPID != 0 && pid != steamPID)
 		return;
@@ -56,50 +58,34 @@ void handle_open_hook(const char __user* pathname, uint64_t dfd, uint64_t flags,
 	name[1023] = '\0';
 
 	if (strstr(name, procName)) {
-		printk("vaclog: Open file on target PID! [%s] (%lld %llx %hx)\n", name, dfd, flags, mode);
+		printk("vaclog: Open file on target PID! [%s] (%lld %llx %hx) %d %d\n", name, dfd, flags, mode, current->tgid, cpid);
 		print_user_stack();
 	}
 }
 
-void handle_mmap_hook(unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, unsigned long fd, unsigned long off)
+void handle_mmap_hook(const struct pt_regs* regs, unsigned long addr, unsigned long len, unsigned long prot, unsigned long flags, unsigned int fd, unsigned long off)
 {
-	pid_t cpid = task_pid_nr(current);
-	char name[1024];
-	struct file* file = NULL;
+	pid_t cpid = task_pid_nr(current->parent);
+	/* 0x24 to reach VAC loader stack pointer and 0x11c to get to the base pointer */
+	void __user* bp = (void*)(regs->sp + 0x24 + 0x11c);
+	int ret = 0;
 
-	if (0 && cpid == ctx.pid) {
-		printk("vaclog: MMAP on target PID! [%lu @ %lx] (%lu %lu)\n", len, addr, fd, off);
-		print_user_stack();
-		return;
-	}
+	if ((steamPID != 0 && cpid != steamPID && 0) || strcmp(current->comm, "ClientModuleMan"))
+	  return;
+		//|| fd != -1 || strcmp(current->comm, "ClientModuleMan"))
 
-	if (steamPID != 0 && cpid != steamPID)
-		return;
-
-    file = fget(fd);
-	if (!file)
-		return;
-	dentry_path_raw(file->f_path.dentry, name, 1024);
-	fput(file);
-	name[1023] = '\0';
-	if (strstr(name, procName)) {
-		printk("vaclog: MMAP: %s\n", name);
-		print_user_stack();
-	}
+	ret = dump_vac_module(bp + 0x8);
+	if (!ret)
+		printk("vaclog: dumped VAC module!\n");
+	else if (ret < -2)
+		printk("vaclog: failed to dump VAC module! ret: %d\n", ret);
 }
 
-void handle_munmap_hook(unsigned long addr, unsigned long len)
+void handle_munmap_hook(const struct pt_regs* regs, unsigned long addr, unsigned long len)
 {
-	pid_t cpid = task_pid_nr(current);
-
-	if (cpid == ctx.pid) {
-		printk("vaclog: MUNMAP on target PID! [%lu @ %lx]\n", len, addr);
-		print_user_stack();
-		return;
-	}
 }
 
-int handle_pread64_hook(int fd, void* buf, size_t count, off_t offset, long ret)
+int handle_pread64_hook(const struct pt_regs* regs, int fd, void* buf, size_t count, off_t offset, long ret)
 {
 	pid_t cpid = task_pid_nr(current);
 	long count2 = ret;

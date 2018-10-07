@@ -1,5 +1,5 @@
 obj-m += vaclog.o
-vaclog-objs := src/main.o src/hooks.o src/hook_handlers.o src/scantrack.o
+vaclog-objs := src/main.o src/hooks.o src/hook_handlers.o src/scantrack.o src/vacdump.o src/fs_access.o
 MCFLAGS += -g -O0
 ccflags-y += ${MCFLAGS}
 CC += ${MCFLAGS}

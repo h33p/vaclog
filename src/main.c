@@ -45,7 +45,7 @@ static int __init vaclog_init(void) {
 	/*hook_syscall(sct64, __NR_process_vm_readv, &_process_vm_readv);*/
 	/*hook_syscall(sct64, __NR_open, &_open);
 	  hook_syscall(sct64, __NR_openat, &_openat);*/
-	hook_syscall(sct64, __NR_mmap, &_mmap);
+	/*hook_syscall(sct64, __NR_mmap, &_mmap);*/
 	/*hook_syscall(sct64, __NR_munmap, &_munmap);*/
 	/*hook_syscall(sct64, __NR_pread64, &_pread);
 	hook_syscall(sct64, __NR_read, &_read);*/
@@ -53,7 +53,7 @@ static int __init vaclog_init(void) {
 	/*hook_syscall(sct32, __NR_ia32_process_vm_readv, &_process_vm_readv32);*/
 	hook_syscall(sct32, __NR_ia32_open, &_open32);
 	hook_syscall(sct32, __NR_ia32_openat, &_openat32);
-	/*hook_syscall(sct32, __NR_ia32_mmap, &_mmap32);*/
+	hook_syscall(sct32, __NR_ia32_mmap2, &_mmap32);
 	/*hook_syscall(sct32, __NR_ia32_munmap, &_munmap32);*/
 	hook_syscall(sct32, __NR_ia32_pread64, &_pread32);
 	hook_syscall(sct32, __NR_ia32_read, &_read32);
