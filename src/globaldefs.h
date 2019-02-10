@@ -30,6 +30,7 @@ extern pid_t steamPID;
 extern char procName[];
 
 void print_user_stack(void);
+unsigned long get_user_stack(int idx);
 
 /* offset, sz and permissions arguments are optional */
 int address_module_offset(pid_t pid, uint64_t addr, char* buf, size_t buflen, off_t* offset, size_t* sz, char* permissions);

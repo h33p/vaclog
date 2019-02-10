@@ -37,7 +37,8 @@ int dump_vac_module(void __user* modinfo)
 	file = kernel_open(filename, O_RDONLY, 0, &err);
 
 	if (file || err == -13) {
-		kernel_close(file);
+		if (file)
+			kernel_close(file);
 		vfree(kbuf);
 		return -3;
 	}

@@ -60,7 +60,7 @@ static fscan_track_t* fscan_insert_entry_address(ls_fscan_track_t* ls, pid_t pid
 
 	while (c-- > name && *c != '/');
 
-	strncpy(new_entry.filename, ++c, 64);
+	strncpy(new_entry.filename, ++c, 63);
 	new_entry.start = address - offset;
 	new_entry.end = new_entry.start + sz;
 	new_entry.scans_made = 0;

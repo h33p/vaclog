@@ -14,9 +14,6 @@ asmlinkage long _openat32(const struct pt_regs* regs);
 asmlinkage long _mmap(const struct pt_regs* regs);
 asmlinkage long _mmap32(const struct pt_regs* regs);
 
-asmlinkage long _munmap(const struct pt_regs* regs);
-asmlinkage long _munmap32(const struct pt_regs* regs);
-
 asmlinkage long _pread(const struct pt_regs* regs);
 asmlinkage long _pread32(const struct pt_regs* regs);
 asmlinkage long _read(const struct pt_regs* regs);

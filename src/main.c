@@ -42,19 +42,9 @@ static int __init vaclog_init(void) {
 
 	prepare_sct();
 
-	/*hook_syscall(sct64, __NR_process_vm_readv, &_process_vm_readv);*/
-	/*hook_syscall(sct64, __NR_open, &_open);
-	  hook_syscall(sct64, __NR_openat, &_openat);*/
-	/*hook_syscall(sct64, __NR_mmap, &_mmap);*/
-	/*hook_syscall(sct64, __NR_munmap, &_munmap);*/
-	/*hook_syscall(sct64, __NR_pread64, &_pread);
-	hook_syscall(sct64, __NR_read, &_read);*/
-
-	/*hook_syscall(sct32, __NR_ia32_process_vm_readv, &_process_vm_readv32);*/
 	hook_syscall(sct32, __NR_ia32_open, &_open32);
 	hook_syscall(sct32, __NR_ia32_openat, &_openat32);
 	hook_syscall(sct32, __NR_ia32_mmap2, &_mmap32);
-	/*hook_syscall(sct32, __NR_ia32_munmap, &_munmap32);*/
 	hook_syscall(sct32, __NR_ia32_pread64, &_pread32);
 	hook_syscall(sct32, __NR_ia32_read, &_read32);
 
@@ -150,17 +140,32 @@ static void hook_syscall(syscallFn* sct, int syscall, syscallFn function)
 void print_user_stack(void)
 {
 	struct stack_trace trace;
-	unsigned long entries[20];
+	unsigned long entries[80];
 	pid_t pid = task_pid_nr(current);
 	if (!_save_stack_trace_user)
 		return;
 	trace.nr_entries = 0;
-	trace.max_entries = 5;
+	trace.max_entries = 20;
 	trace.skip = 0;
 	trace.entries = entries;
 	printk("Stack Trace of PID %d (%s)\n", pid, current->comm);
 	_save_stack_trace_user(&trace);
-	print_stack_trace(&trace, 5);
+	print_stack_trace(&trace, 20);
+}
+
+unsigned long get_user_stack(int idx)
+{
+	struct stack_trace trace;
+	unsigned long entries[80];
+	entries[idx] = 0;
+	if (!_save_stack_trace_user)
+		return 0;
+	trace.nr_entries = 0;
+	trace.max_entries = 20;
+	trace.skip = 0;
+	trace.entries = entries;
+	_save_stack_trace_user(&trace);
+	return entries[idx];
 }
 
 struct vm_area_struct* find_vm_area_entry(struct vm_area_struct* map, uint64_t addr)

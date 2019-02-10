@@ -15,12 +15,24 @@
 
 void handle_process_readv_hook(const struct pt_regs* regs, pid_t pid, const struct iovec __user* lvec, uint64_t lveccnt, const struct iovec __user* rvec, uint64_t rveccnt, uint64_t flags)
 {
+	struct iovec localvec[32];
+	struct iovec remotevec[32];
+	int i;
+	char oversize = 0;
+
 	pid_t cpid = task_pid_nr(current->parent);
 	if (steamPID != 0 && cpid != steamPID)
 		return;
 
-	if (lveccnt > 10000 || rveccnt > 10000)
-		return;
+	if (lveccnt > 32) {
+		lveccnt = 32;
+		oversize = 1;
+	}
+
+	if (rveccnt > 32) {
+		rveccnt = 32;
+		oversize = 1;
+	}
 
 	if (lveccnt > rveccnt)
 		lveccnt = rveccnt;
@@ -28,9 +40,6 @@ void handle_process_readv_hook(const struct pt_regs* regs, pid_t pid, const stru
 		rveccnt = lveccnt;
 
 	if (pid == ctx.pid) {
-		struct iovec localvec[lveccnt];
-		struct iovec remotevec[rveccnt];
-		int i;
 
 		if (copy_from_user(localvec, lvec, sizeof(struct iovec) * lveccnt))
 			return;
@@ -42,6 +51,8 @@ void handle_process_readv_hook(const struct pt_regs* regs, pid_t pid, const stru
 
 		for (i = 0; i < lveccnt; i++)
 			printk("vaclog: %llx\t<--\t%llx [%lx]\n", (uint64_t)localvec[i].iov_base, (uint64_t)remotevec[i].iov_base, localvec[i].iov_len);
+		if (oversize)
+			printk("vaclog: There are more iovecs that have been ommited");
 	}
 }
 
@@ -79,10 +90,6 @@ void handle_mmap_hook(const struct pt_regs* regs, unsigned long addr, unsigned l
 		printk("vaclog: dumped VAC module!\n");
 	else if (ret < -2)
 		printk("vaclog: failed to dump VAC module! ret: %d\n", ret);
-}
-
-void handle_munmap_hook(const struct pt_regs* regs, unsigned long addr, unsigned long len)
-{
 }
 
 int handle_pread64_hook(const struct pt_regs* regs, int fd, void* buf, size_t count, off_t offset, long ret)
