@@ -105,12 +105,12 @@ static ssize_t vaclog_write(struct file* file, const char __user* buffer, size_t
 
 static void ewrite(void)
 {
-	write_cr0(read_cr0() & (~0x10000));
+	asm volatile("mov %0,%%cr0": : "r" (read_cr0() & (~0x10000)));
 }
 
 static void dwrite(void)
 {
-	write_cr0(read_cr0() | 0x10000);
+	asm volatile("mov %0,%%cr0": : "r" (read_cr0() | 0x10000));
 }
 
 static void prepare_sct(void)
