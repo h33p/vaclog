@@ -10,7 +10,7 @@ syscallFn sct32_backup[544];
 pid_t steamPID = 0;
 char procName[256];
 
-save_stack_trace_userFn _save_stack_trace_user = NULL;
+stack_trace_save_userFn _stack_trace_save_user = NULL;
 getnameFn _getname_flags = NULL;
 fdget_posFn _fdget_pos = NULL;
 f_unlock_posFn _f_unlock_pos = NULL;
@@ -32,7 +32,7 @@ static int __init vaclog_init(void) {
     sct64 = (syscallFn*)kallsyms_lookup_name("sys_call_table");
     sct32 = (syscallFn*)kallsyms_lookup_name("ia32_sys_call_table");
 	_getname_flags = (getnameFn)kallsyms_lookup_name("getname_flags");
-	_save_stack_trace_user = (save_stack_trace_userFn)kallsyms_lookup_name("save_stack_trace_user");
+	_stack_trace_save_user = (stack_trace_save_userFn)kallsyms_lookup_name("stack_trace_save_user");
 	_fdget_pos = (fdget_posFn)kallsyms_lookup_name("__fdget_pos");
 	_f_unlock_pos = (f_unlock_posFn)kallsyms_lookup_name("__f_unlock_pos");
 
@@ -139,32 +139,23 @@ static void hook_syscall(syscallFn* sct, int syscall, syscallFn function)
 
 void print_user_stack(void)
 {
-	struct stack_trace trace;
-	unsigned long entries[80];
+	unsigned long entries[20];
+	unsigned int nr_entries;
 	pid_t pid = task_pid_nr(current);
-	if (!_save_stack_trace_user)
+	if (!_stack_trace_save_user)
 		return;
-	trace.nr_entries = 0;
-	trace.max_entries = 20;
-	trace.skip = 0;
-	trace.entries = entries;
 	printk("Stack Trace of PID %d (%s)\n", pid, current->comm);
-	_save_stack_trace_user(&trace);
-	print_stack_trace(&trace, 20);
+	nr_entries = _stack_trace_save_user(entries, ARRAY_SIZE(entries));
+	stack_trace_print(entries, nr_entries, 0);
 }
 
 unsigned long get_user_stack(int idx)
 {
-	struct stack_trace trace;
-	unsigned long entries[80];
+	unsigned long entries[20];
 	entries[idx] = 0;
-	if (!_save_stack_trace_user)
+	if (!_stack_trace_save_user)
 		return 0;
-	trace.nr_entries = 0;
-	trace.max_entries = 20;
-	trace.skip = 0;
-	trace.entries = entries;
-	_save_stack_trace_user(&trace);
+	_stack_trace_save_user(entries, ARRAY_SIZE(entries));
 	return entries[idx];
 }
 

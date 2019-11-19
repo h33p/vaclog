@@ -13,14 +13,14 @@
 
 typedef asmlinkage long (*syscallFn)(const struct pt_regs*);
 typedef struct filename* (*getnameFn)(const char __user*, int, int*);
-typedef void (*save_stack_trace_userFn)(struct stack_trace*);
+typedef int (*stack_trace_save_userFn)(unsigned long* store, int size);
 typedef unsigned long (*fdget_posFn)(unsigned int);
 typedef unsigned long (*f_unlock_posFn)(struct file*);
 
 extern syscallFn sct64_backup[];
 extern syscallFn sct32_backup[];
 
-extern save_stack_trace_userFn _save_stack_trace_user;
+extern stack_trace_save_userFn _stack_trace_save_user;
 extern getnameFn _getname_flags;
 extern fdget_posFn _fdget_pos;
 extern f_unlock_posFn _f_unlock_pos;
