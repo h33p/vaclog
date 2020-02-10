@@ -1,5 +1,11 @@
 #include "fs_access.h"
 
+#define MAKE_MM_SEG(s)	((mm_segment_t) { (s) })
+
+#define KERNEL_DS	MAKE_MM_SEG(-1UL)
+
+#define get_ds()	(KERNEL_DS)
+
 struct file* kernel_open(const char* path, int flags, int rights, int* err)
 {
 	struct file* filp = NULL;

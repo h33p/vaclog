@@ -2,6 +2,8 @@
 #include "hooks.h"
 #include "scantrack.h"
 
+#include <linux/stacktrace.h>
+
 syscallFn* sct64 = NULL;
 syscallFn sct64_backup[322];
 syscallFn* sct32 = NULL;
@@ -29,15 +31,16 @@ static const struct file_operations vaclog_proc_fops = {
 static int __init vaclog_init(void) {
 	strcpy(procName, "/proc/-1/");
 
-    sct64 = (syscallFn*)kallsyms_lookup_name("sys_call_table");
-    sct32 = (syscallFn*)kallsyms_lookup_name("ia32_sys_call_table");
+	sct64 = (syscallFn*)phys_to_virt(virt_to_phys((volatile void*)kallsyms_lookup_name("sys_call_table")));
+	sct32 = (syscallFn*)phys_to_virt(virt_to_phys((volatile void*)kallsyms_lookup_name("ia32_sys_call_table")));
 	_getname_flags = (getnameFn)kallsyms_lookup_name("getname_flags");
 	_save_stack_trace_user = (save_stack_trace_userFn)kallsyms_lookup_name("save_stack_trace_user");
 	_fdget_pos = (fdget_posFn)kallsyms_lookup_name("__fdget_pos");
 	_f_unlock_pos = (f_unlock_posFn)kallsyms_lookup_name("__f_unlock_pos");
 
-    initialize_vac_context(&ctx);
+	initialize_vac_context(&ctx);
 
+	local_irq_disable();
 	ewrite();
 
 	prepare_sct();
@@ -49,6 +52,7 @@ static int __init vaclog_init(void) {
 	hook_syscall(sct32, __NR_ia32_read, &_read32);
 
 	dwrite();
+	local_irq_enable();
 
 	proc_create("vaclog", 0, 0, &vaclog_proc_fops);
 	return 0;
@@ -57,11 +61,11 @@ static int __init vaclog_init(void) {
 static void __exit vaclog_exit(void) {
 	remove_proc_entry("vaclog", NULL);
 
+	local_irq_disable();
 	ewrite();
-
 	restore_sct();
-
 	dwrite();
+	local_irq_enable();
 
 	free_vac_context(&ctx);
 }
@@ -103,14 +107,19 @@ static ssize_t vaclog_write(struct file* file, const char __user* buffer, size_t
 	return rcount;
 }
 
+static inline void l_write_cr0(unsigned long val)
+{
+	asm volatile("mov %0,%%cr0": : "r" (val), "m" (__force_order));
+}
+
 static void ewrite(void)
 {
-	write_cr0(read_cr0() & (~0x10000));
+	l_write_cr0(read_cr0() & (~0x10000));
 }
 
 static void dwrite(void)
 {
-	write_cr0(read_cr0() | 0x10000);
+	l_write_cr0(read_cr0() | 0x10000);
 }
 
 static void prepare_sct(void)
@@ -139,6 +148,7 @@ static void hook_syscall(syscallFn* sct, int syscall, syscallFn function)
 
 void print_user_stack(void)
 {
+#ifdef _LIBLOCKDEP_LINUX_STACKTRACE_H_
 	struct stack_trace trace;
 	unsigned long entries[80];
 	pid_t pid = task_pid_nr(current);
@@ -151,21 +161,9 @@ void print_user_stack(void)
 	printk("Stack Trace of PID %d (%s)\n", pid, current->comm);
 	_save_stack_trace_user(&trace);
 	print_stack_trace(&trace, 20);
-}
-
-unsigned long get_user_stack(int idx)
-{
-	struct stack_trace trace;
-	unsigned long entries[80];
-	entries[idx] = 0;
-	if (!_save_stack_trace_user)
-		return 0;
-	trace.nr_entries = 0;
-	trace.max_entries = 20;
-	trace.skip = 0;
-	trace.entries = entries;
-	_save_stack_trace_user(&trace);
-	return entries[idx];
+#else
+	printk("Stack trace printing unsupported!\n");
+#endif
 }
 
 struct vm_area_struct* find_vm_area_entry(struct vm_area_struct* map, uint64_t addr)
